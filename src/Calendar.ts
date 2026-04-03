@@ -2,6 +2,8 @@ import { createDAVClient, DAVCalendar, DAVCalendarObject } from 'tsdav';
 import { Temporal } from '@js-temporal/polyfill';
 import { CalendarEvent } from './CalendarEvent.js';
 import { Email } from './Email.js';
+import { CalendarError, InvalidBookingDateError } from './CalendarError.js';
+import { Result } from './Result.js';
 
 export class Calendar {
     DCal: DAVCalendar
@@ -10,29 +12,35 @@ export class Calendar {
         this.DCal = dcal;
     }
 
-    public static async fetchCalendars(username: string, password: string): Promise<DAVCalendar[]> {
-        const client = await createDAVClient({
-            serverUrl: 'https://caldav.icloud.com',
-            credentials: {
-                username: username,
-                password: password,
-            },
-            authMethod: 'Basic',
-            defaultAccountType: 'caldav',
-        });
+    public static async fetchCalendars(username: string, password: string): Promise<Result<DAVCalendar[], Error>> {
+        try{
+            const client = await createDAVClient({
+                serverUrl: 'https://caldav.icloud.com',
+                credentials: {
+                    username: username,
+                    password: password,
+                },
+                authMethod: 'Basic',
+                defaultAccountType: 'caldav',
+            });
 
-        const calendars = await client.fetchCalendars();
-        return calendars;
+            const calendars = await client.fetchCalendars();
+            return { ok: true, value: calendars };
+        } catch (error) {
+            return { ok: false, error: new CalendarError('Failed to fetch calendars', 'FETCH_CALENDARS_ERROR', { cause: error }) };
+        }
     }
 
-    public async fetchFreeBookingSlots(username: string, password: string, date: Temporal.ZonedDateTime): Promise<Temporal.ZonedDateTime[]> {
+    public async fetchFreeBookingSlots(username: string, password: string, date: Temporal.ZonedDateTime): Promise<Result<Temporal.ZonedDateTime[], Error>> {
         const tomorrow = Temporal.Now.zonedDateTimeISO('America/Denver').add({ days: 1 });
         if (Temporal.ZonedDateTime.compare(date, tomorrow) < 0 || date.dayOfWeek === 6 || date.dayOfWeek === 7)
-            return [];
+            return { ok: false, error: new InvalidBookingDateError('Booking date must be at least 24 hours in the future and cannot be on a weekend.') };
 
-        let calendarEvents = await this.fetchCalendarObjects(username, password, date);
+        const calendarResult = await this.fetchCalendarObjects(username, password, date);
+        if (!calendarResult.ok) return { ok: false, error: calendarResult.error };
+        const calendarEvents = calendarResult.value;
+
         let freeSlots: Temporal.ZonedDateTime[] = [];
-
         let slot1Free: boolean = true;
         let slot2Free: boolean = true;
         let slot3Free: boolean = true;
@@ -200,23 +208,23 @@ export class Calendar {
             freeSlots.push(slot17);
         if (slot18Free == true)
             freeSlots.push(slot18);
-        return freeSlots;
+        return { ok: true, value: freeSlots };
     }
 
-    public async createNewBooking(username: string, password: string, clientName: string, clientEmail: string, start: Temporal.ZonedDateTime): Promise<boolean> {
-        const client = await createDAVClient({
-            serverUrl: 'https://caldav.icloud.com',
-            credentials: {
-                username: username,
-                password: password,
-            },
-            authMethod: 'Basic',
-            defaultAccountType: 'caldav',
-        });
-
-        const iCalString = this.createICalString(clientName, start);
-        
+    public async createNewBooking(username: string, password: string, clientName: string, clientEmail: string, start: Temporal.ZonedDateTime): Promise<Result<boolean, Error>> {
         try{
+            const client = await createDAVClient({
+                serverUrl: 'https://caldav.icloud.com',
+                credentials: {
+                    username: username,
+                    password: password,
+                },
+                authMethod: 'Basic',
+                defaultAccountType: 'caldav',
+            });
+
+            const iCalString = this.createICalString(clientName, start);
+
             await client.createCalendarObject({
                 calendar: this.DCal,
                 filename: 'Introduction.ics',
@@ -226,51 +234,55 @@ export class Calendar {
         }
         catch(error){
             console.error('Error creating calendar object:', error);
-            return false;
+            return { ok: false, error: new CalendarError('Failed to create calendar object', 'CREATE_CALENDAR_OBJECT_ERROR', { cause: error }) };
         }
         
-        return true;
+        return { ok: true, value: true };
     }
 
-    private async fetchCalendarObjects(username: string, password: string, date: Temporal.ZonedDateTime): Promise<CalendarEvent[]> {
-        let events: CalendarEvent[] = [];
+    private async fetchCalendarObjects(username: string, password: string, date: Temporal.ZonedDateTime): Promise<Result<CalendarEvent[], Error>> {
+        try{
+            let events: CalendarEvent[] = [];
 
-        const client = await createDAVClient({
-            serverUrl: 'https://caldav.icloud.com',
-            credentials: {
-                username: username,
-                password: password,
-            },
-            authMethod: 'Basic',
-            defaultAccountType: 'caldav',
-        });
-
-        let DCalObjects = await client.fetchCalendarObjects({
-            calendar: this.DCal, 
-            timeRange: { 
-                start: date.toPlainDate().toString(), 
-                end:   date.add({ days: 1 }).toPlainDate().toString()
-            }
-        });
-
-        DCalObjects.forEach((obj, index) => {
-            let data: string[] = obj.data.toString().split(/\r?\n/);
-            let name = '';
-            let start = '';
-            let end = '';
-            
-            data.forEach((line) => {
-                if(line.startsWith('SUMMARY:'))
-                    name = line.replace('SUMMARY:','');
-                else if(line.startsWith('DTSTART;'))
-                    start = line.replace('DTSTART;','');
-                else if(line.startsWith('DTEND;'))
-                    end = line.replace('DTEND;','');
+            const client = await createDAVClient({
+                serverUrl: 'https://caldav.icloud.com',
+                credentials: {
+                    username: username,
+                    password: password,
+                },
+                authMethod: 'Basic',
+                defaultAccountType: 'caldav',
             });
 
-            events.push(new CalendarEvent(name, CalendarEvent.CalendarDateParse(start), CalendarEvent.CalendarDateParse(end), obj));
-        });
-        return events;
+            let DCalObjects = await client.fetchCalendarObjects({
+                calendar: this.DCal, 
+                timeRange: { 
+                    start: date.toPlainDate().toString(), 
+                    end:   date.add({ days: 1 }).toPlainDate().toString()
+                }
+            });
+
+            DCalObjects.forEach((obj, index) => {
+                let data: string[] = obj.data.toString().split(/\r?\n/);
+                let name = '';
+                let start = '';
+                let end = '';
+                
+                data.forEach((line) => {
+                    if(line.startsWith('SUMMARY:'))
+                        name = line.replace('SUMMARY:','');
+                    else if(line.startsWith('DTSTART;'))
+                        start = line.replace('DTSTART;','');
+                    else if(line.startsWith('DTEND;'))
+                        end = line.replace('DTEND;','');
+                });
+
+                events.push(new CalendarEvent(name, CalendarEvent.CalendarDateParse(start), CalendarEvent.CalendarDateParse(end), obj));
+            });
+            return { ok: true, value: events };
+        } catch (error) {
+            return { ok: false, error: new CalendarError('Failed to fetch calendar objects', 'FETCH_CALENDAR_OBJECTS_ERROR', { cause: error }) };
+        }
     }
 
     private createICalString(clientName: string, start: Temporal.ZonedDateTime): string {
@@ -296,7 +308,7 @@ export class Calendar {
         return iCalString;
     }
 
-    private async sendBookingConfirmation(clientEmail: string, clientName: string, start: Temporal.ZonedDateTime, teamsJoinUrl: string, iCalString?: string): Promise<boolean> {
+    private async sendBookingConfirmation(clientEmail: string, clientName: string, start: Temporal.ZonedDateTime, teamsJoinUrl: string, iCalString?: string): Promise<Result<boolean, Error>> {
         const emailService = new Email();
         if(!iCalString === null || !iCalString === undefined || iCalString === "")
             iCalString = this.createICalString(clientName, start);
@@ -305,9 +317,8 @@ export class Calendar {
             await emailService.sendBookingConfirmation(clientEmail, clientName, start, teamsJoinUrl, iCalString);
         }
         catch(error){
-            console.error('Error sending booking confirmation email:', error);
-            return false;
+            return { ok: false, error: new CalendarError('Failed to send booking confirmation email', 'SEND_EMAIL_ERROR', { cause: error }) };
         }
-        return true;
+        return { ok: true, value: true };
     }
 }
