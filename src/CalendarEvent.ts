@@ -1,5 +1,5 @@
 import { Temporal } from "@js-temporal/polyfill";
-import { DAVCalendarObject } from "tsdav";
+import type { DAVCalendarObject } from "tsdav";
 
 export class CalendarEvent {
     name: string;
