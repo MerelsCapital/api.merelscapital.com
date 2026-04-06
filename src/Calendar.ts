@@ -215,7 +215,7 @@ export class Calendar {
                 err: error,
                 msg: 'An error occurred creating the iCal string.',
             });
-            return { ok: false, error: new Error('FAn error occurred creating the iCal string.') };
+            return { ok: false, error: new Error('An error occurred creating the iCal string.') };
         }
     }
 

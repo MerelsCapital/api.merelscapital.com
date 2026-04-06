@@ -22,7 +22,8 @@ export class Email {
     });
   }
 
-    public async sendBookingConfirmation(toEmail: string, clientName: string, start: Temporal.ZonedDateTime, teamsJoinUrl: string, iCalString?: string): Promise<Result<boolean, Error>> {
+    public async sendBookingConfirmation(toEmail: string, clientName: string, time: Temporal.ZonedDateTime, teamsJoinUrl: string, iCalString?: string): Promise<Result<boolean, Error>> {
+        const start = Temporal.ZonedDateTime.from(time);
         const mailOptions: nodemailer.SendMailOptions = {
             from: `"Merels Capital" <andrewbowden86@icloud.com>`,
             to: toEmail,
@@ -45,7 +46,7 @@ export class Email {
         };
 
         try{
-          await this.transporter.sendMail(mailOptions);
+            await this.transporter.sendMail(mailOptions);
         }
         catch(error){
             Logger.error({
