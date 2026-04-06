@@ -3,6 +3,7 @@ import type { DAVCalendar, DAVCalendarObject } from 'tsdav';
 import { Temporal } from '@js-temporal/polyfill';
 import { CalendarEvent } from './CalendarEvent.js';
 import { Email } from './Email.js';
+import { Logger } from './Logger.js';
 import { CalendarError, InvalidBookingDateError } from './CalendarError.js';
 import type { Result } from './Result.js';
 
@@ -11,10 +12,6 @@ export class Calendar {
     
     constructor(dcal: DAVCalendar) { 
         this.DCal = dcal;
-    }
-
-    public static async testFunc(): Promise<string> {
-        return "Test function executed successfully.";
     }
 
     public static async fetchCalendars(username: string, password: string): Promise<Result<DAVCalendar[], Error>> {
@@ -32,17 +29,32 @@ export class Calendar {
             const calendars = await client.fetchCalendars();
             return { ok: true, value: calendars };
         } catch (error) {
+            Logger.error({
+                err: error,
+                msg: 'Failed to fetch calendars from ICloud.',
+            });
             return { ok: false, error: new CalendarError('Failed to fetch calendars', 'FETCH_CALENDARS_ERROR', { cause: error }) };
         }
     }
 
     public async fetchFreeBookingSlots(username: string, password: string, date: Temporal.ZonedDateTime): Promise<Result<Temporal.ZonedDateTime[], Error>> {
         const tomorrow = Temporal.Now.zonedDateTimeISO('America/Denver').add({ days: 1 });
-        if (Temporal.ZonedDateTime.compare(date, tomorrow) < 0 || date.dayOfWeek === 6 || date.dayOfWeek === 7)
-            return { ok: false, error: new InvalidBookingDateError('Booking date must be at least 24 hours in the future and cannot be on a weekend.') };
+        if (Temporal.ZonedDateTime.compare(date, tomorrow) < 0 || date.dayOfWeek === 6 || date.dayOfWeek === 7){
+            Logger.error({
+                err: new Error('Booking date must be at least 24 hours in the future and cannot be on a weekend.'),
+                msg: 'Invalid time provided.',
+            });
+            return { ok: false, error: new Error('Booking date must be at least 24 hours in the future and cannot be on a weekend.') };
+        }
 
         const calendarResult = await this.fetchCalendarObjects(username, password, date);
-        if (!calendarResult.ok) return { ok: false, error: calendarResult.error };
+        if (!calendarResult.ok) {
+            Logger.error({
+                err: new Error('Booking date must be at least 24 hours in the future and cannot be on a weekend.'),
+                msg: 'Failed to fetch calendar objects.',
+            });
+            return { ok: false, error: calendarResult.error };
+        }
         const calendarEvents = calendarResult.value;
 
         const slotTimes = [
@@ -85,7 +97,7 @@ export class Calendar {
         return { ok: true, value: freeSlots };
     }
 
-    public async createNewBooking(username: string, password: string, clientName: string, clientEmail: string, start: Temporal.ZonedDateTime): Promise<Result<boolean, Error>> {
+    public async createNewBooking(username: string, password: string, clientName: string, clientEmail: string, time: Temporal.ZonedDateTime, details: string): Promise<Result<boolean, Error>> {
         try{
             const client = await createDAVClient({
                 serverUrl: 'https://caldav.icloud.com',
@@ -97,20 +109,31 @@ export class Calendar {
                 defaultAccountType: 'caldav',
             });
 
-            const iCalString = this.createICalString(clientName, start);
-
-            await client.createCalendarObject({
-                calendar: this.DCal,
-                filename: 'Introduction.ics',
-                iCalString: iCalString,
-            });
-            this.sendBookingConfirmation(clientEmail, clientName, start, 'testurl.test', iCalString);
+            const iCalString = this.createICalString(clientName, time, details);
+            if(iCalString.ok){
+                try{
+                    await client.createCalendarObject({
+                        calendar: this.DCal,
+                        filename: 'Introduction.ics',
+                        iCalString: iCalString.value,
+                    });
+                }
+                catch(error){
+                    Logger.error({
+                        err: error,
+                        msg: 'An error occoured createing a calendar object.',
+                    });
+                }
+                this.sendBookingConfirmation(clientEmail, clientName, time, details, 'testurl.test', iCalString);
+            }
         }
         catch(error){
-            console.error('Error creating calendar object:', error);
+            Logger.error({
+                err: error,
+                msg: 'An error occoured createing a calendar object.',
+            });
             return { ok: false, error: new CalendarError('Failed to create calendar object', 'CREATE_CALENDAR_OBJECT_ERROR', { cause: error }) };
         }
-        
         return { ok: true, value: true };
     }
 
@@ -155,42 +178,62 @@ export class Calendar {
             });
             return { ok: true, value: events };
         } catch (error) {
+            Logger.error({
+                err: error,
+                msg: 'Failed to fetch calendar objects.',
+            });
             return { ok: false, error: new CalendarError('Failed to fetch calendar objects', 'FETCH_CALENDAR_OBJECTS_ERROR', { cause: error }) };
         }
     }
 
-    private createICalString(clientName: string, start: Temporal.ZonedDateTime): string {
-        const uid = `booking-${start.toString()}-${Math.random().toString(36).slice(2)}@merelscapital.com`;
-        const now = Temporal.Now.zonedDateTimeISO('UTC');
-        const tz = start.timeZoneId;
-
-        let iCalString = "BEGIN:VCALENDAR\n";
-        iCalString += "VERSION:2.0\n";
-        iCalString += 'PRODID:-//Merels Capital//Bookings v1.0//EN\r\n';
-        iCalString += "METHOD:PUBLISH\n";
-        iCalString += "BEGIN:VEVENT\n";
-        iCalString += `UID:${uid}\n`;
-        iCalString += `SUMMARY:${clientName} - Introductory Meeting\n`;
-        iCalString += `DTSTART;TZID=${start.timeZoneId}:${start.toPlainDateTime().toString().replace(/[-:]/g, '')}\n`;
-        iCalString += `DTEND;TZID=${start.timeZoneId}:${start.add({ minutes: 30 }).toPlainDateTime().toString().replace(/[-:]/g, '')}\n`;
-        iCalString += `DTSTAMP:${now.toPlainDate().toString().replace(/[-:]/g, '')}Z\n`;
-        iCalString += "LOCATION:<Teams link>>\n";
-        iCalString += `DESCRIPTION:Introductory meeting with ${clientName}\n`;
-        iCalString += "CLASS:PUBLIC\n";
-        iCalString += "END:VEVENT\n";
-        iCalString += "END:VCALENDAR\n";
-        return iCalString;
-    }
-
-    private async sendBookingConfirmation(clientEmail: string, clientName: string, start: Temporal.ZonedDateTime, teamsJoinUrl: string, iCalString?: string): Promise<Result<boolean, Error>> {
-        const emailService = new Email();
-        if(!iCalString === null || !iCalString === undefined || iCalString === "")
-            iCalString = this.createICalString(clientName, start);
-
+    private createICalString(clientName: string, time: Temporal.ZonedDateTime, details: string): Result<string> {
         try{
-            await emailService.sendBookingConfirmation(clientEmail, clientName, start, teamsJoinUrl, iCalString);
+            const uid = `booking-${time.toString()}-${Math.random().toString(36).slice(2)}@merelscapital.com`;
+            const now = Temporal.Now.zonedDateTimeISO('UTC');
+            const start = Temporal.ZonedDateTime.from(time);
+            const tz = start.timeZoneId;
+            
+            let iCalString = "BEGIN:VCALENDAR\n";
+            iCalString += "VERSION:2.0\n";
+            iCalString += 'PRODID:-//Merels Capital//Bookings v1.0//EN\r\n';
+            iCalString += "METHOD:PUBLISH\n";
+            iCalString += "BEGIN:VEVENT\n";
+            iCalString += `UID:${uid}\n`;
+            iCalString += `SUMMARY:${clientName} - Introductory Meeting\n`;
+            iCalString += `DTSTART;TZID=${start.timeZoneId}:${start.toPlainDateTime().toString().replace(/[-:]/g, '')}\n`;
+            iCalString += `DTEND;TZID=${start.timeZoneId}:${start.add({ minutes: 30 }).toPlainDateTime().toString().replace(/[-:]/g, '')}\n`;
+            iCalString += `DTSTAMP:${now.toPlainDate().toString().replace(/[-:]/g, '')}Z\n`;
+            iCalString += "LOCATION:<Teams link>>\n";
+            iCalString += `DESCRIPTION:Introductory meeting with ${clientName}\n ${details}`;
+            iCalString += "CLASS:PUBLIC\n";
+            iCalString += "END:VEVENT\n";
+            iCalString += "END:VCALENDAR\n";
+            return { ok: true, value: iCalString };
         }
         catch(error){
+            Logger.error({
+                err: error,
+                msg: 'An error occurred creating the iCal string.',
+            });
+            return { ok: false, error: new Error('FAn error occurred creating the iCal string.') };
+        }
+    }
+
+    private async sendBookingConfirmation(clientEmail: string, clientName: string, start: Temporal.ZonedDateTime, details: string, teamsJoinUrl: string, iCalString?: Result<string>): Promise<Result<boolean, Error>> {
+        const emailService = new Email();
+        if(iCalString === null || iCalString === undefined || !iCalString.ok || iCalString.value === "")
+            iCalString = this.createICalString(clientName, start, details);
+
+        try{
+            if(iCalString !== undefined && iCalString.ok){
+                await emailService.sendBookingConfirmation(clientEmail, clientName, start, teamsJoinUrl, iCalString.value);
+            }
+        }
+        catch(error){
+            Logger.error({
+                err: error,
+                msg: 'An error occurred sending the confirmation email.',
+            });
             return { ok: false, error: new CalendarError('Failed to send booking confirmation email', 'SEND_EMAIL_ERROR', { cause: error }) };
         }
         return { ok: true, value: true };

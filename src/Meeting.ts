@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import type { Result } from './Result.js';
+import { Logger } from './Logger.js';
 import { readFileSync } from 'fs';
 
 export class Meeting {
@@ -23,8 +24,13 @@ export class Meeting {
         if (!meetingType) throw new Error("Meeting Type is required");
 
         if (meetingType === MeetingType.Phone) {
-            if (isValidPhoneNumber(location, 'US') || isValidPhoneNumber(location, 'GB'))
+            if (isValidPhoneNumber(location, 'US') || isValidPhoneNumber(location, 'GB')){
+                Logger.error({
+                    err: new Error("Location must be a valid phone number."),
+                    msg: 'Location must be a valid phone number.',
+                });
                 throw new Error("Location must be a valid phone number.");
+            }
         } else if (meetingType === MeetingType.Zoom || meetingType === MeetingType.Jitsi) {
             const link = await Meeting.generateMeetingLink(meetingType);
             if (link.ok)
@@ -53,6 +59,10 @@ export class Meeting {
             return { ok: false, error: new Error("Zoom link generation is not yet implemented.") };
         }
         else {
+            Logger.error({
+                err: new Error("Unsupported meeting type for link generation."),
+                msg: 'Unsupported meeting type for link generation.',
+            });
             return { ok: false, error: new Error("Unsupported meeting type for link generation.") };
         }
     }

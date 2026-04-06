@@ -5,6 +5,7 @@ import { Calendar } from './Calendar.js';
 import { Temporal } from '@js-temporal/polyfill';
 import type { Result } from './Result.js';
 import type { DAVCalendar } from 'tsdav';
+import { Logger } from './Logger.js';
 
 const app = express();
 app.use(cors({ origin: 'http://bookings.merelscapital.com:5173' }));
@@ -36,8 +37,14 @@ while (!gotCalendar) {
             }
         }
     }   
-    else
+    else{
+        Logger.error({
+            err: calendarResult.error,
+            msg: 'Failed to fetch calendar.',
+        });
         console.log("Failed to fetch calendar: " + calendarResult.error);
+    }
+        
     if(!gotCalendar)
         await new Promise(resolve => setTimeout(resolve, 1000));
 }
@@ -47,25 +54,34 @@ app.get('/slots', async (req, res) => {
         const date = Temporal.ZonedDateTime.from(`${req.query.date}T00:00:00[America/Denver]`);
         const result = await calendar.fetchFreeBookingSlots(username, password, date);
         if(result.ok){
-            console.log("Fetched free booking slots: " + result.value.length);
             return res.json({ slots: result.value.map(s => s.toString()) });
         }
         else {
-            console.log("Failed to fetch free booking slots: " + result.error);
-            throw result.error;
+            Logger.error({
+                err: new Error("Response status: " + res.status),
+                msg: '.',
+            });
+            console.error(result.error);
         }
     }
     catch(error){
-        console.log("Failed to fetch free booking slots 2: " + error);
+        Logger.error({
+            err: new Error("An error occurred fetching booking slots or parsing booking date."),
+            msg: 'An error occurred fetching booking slots or parsing booking date.',
+        });
+        console.error("An error occurred fetching booking slots or parsing booking date.: " + error);
         return res.status(400).json({ error: 'Invalid Date.' });
     }
 });
 
 app.post('/booking', async (req, res) => {
-    const { name, email, slot } = req.body;
-    const start = Temporal.ZonedDateTime.from(slot);
-    const result = await calendar.createNewBooking(username, password, name, email, start);
+    const { values } = req.body;
+    const result = await calendar.createNewBooking(username, password, values[0], values[1], values[2], values[3]);
     if (!result.ok) {
+        Logger.error({
+            err: new Error("An error occurred creating a booking."),
+            msg: 'An error occurred creating a booking.',
+        });
         res.status(500).json({ error: 'Failed to create booking' });
         return;
     }

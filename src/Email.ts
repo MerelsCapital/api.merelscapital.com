@@ -1,6 +1,8 @@
 import * as dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 import { Temporal } from '@js-temporal/polyfill';
+import type { Result } from './Result.js';
+import { Logger } from './Logger.js';
 
 export class Email {
   private transporter: nodemailer.Transporter;
@@ -20,7 +22,7 @@ export class Email {
     });
   }
 
-    public async sendBookingConfirmation(toEmail: string, clientName: string, start: Temporal.ZonedDateTime, teamsJoinUrl: string, iCalString?: string): Promise<boolean> {
+    public async sendBookingConfirmation(toEmail: string, clientName: string, start: Temporal.ZonedDateTime, teamsJoinUrl: string, iCalString?: string): Promise<Result<boolean, Error>> {
         const mailOptions: nodemailer.SendMailOptions = {
             from: `"Merels Capital" <andrewbowden86@icloud.com>`,
             to: toEmail,
@@ -46,11 +48,15 @@ export class Email {
           await this.transporter.sendMail(mailOptions);
         }
         catch(error){
-          console.error('Error sending confirmation email:', error);
-          return false;
+            Logger.error({
+                err: error,
+                msg: 'Error sending confirmation email.',
+            });
+            console.error('Error sending confirmation email:', error);
+            return { ok: false, error: new Error(String(error))};
         }
 
         console.log(`✅ Confirmation email sent to ${toEmail}`);
-        return true;
+        return { ok: true, value: true}
     }
 }

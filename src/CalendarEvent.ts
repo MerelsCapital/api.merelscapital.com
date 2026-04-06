@@ -1,5 +1,6 @@
 import { Temporal } from "@js-temporal/polyfill";
 import type { DAVCalendarObject } from "tsdav";
+import { Logger } from './Logger.js';
 
 export class CalendarEvent {
     name: string;
@@ -21,6 +22,10 @@ export class CalendarEvent {
 
         const match = dateStr.match(/TZID=([^:]+):(\d{8}T\d{6})/);
         if (!match) {
+            Logger.error({
+                err: new Error(`Invalid iCal date format: ${dateStr}`),
+                msg: 'An error occurred sending the confirmation email.',
+            });
             throw new Error(`Invalid iCal date format: ${dateStr}`);
         }
 
