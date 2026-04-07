@@ -45,7 +45,7 @@ export class Calendar {
                 err: new Error('Booking date must be at least 24 hours in the future and cannot be on a weekend.'),
                 msg: 'Invalid time provided.',
             });
-            return { ok: false, error: new Error('Booking date must be at least 24 hours in the future and cannot be on a weekend.') };
+            return { ok: false, error: new InvalidBookingDateError('Booking date must be at least 24 hours in the future and cannot be on a weekend.') };
         }
 
         const calendarResult = await this.fetchCalendarObjects(username, password, date);

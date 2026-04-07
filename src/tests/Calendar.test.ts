@@ -145,7 +145,7 @@ describe('Calendar', () => {
       const result = await calendar.fetchFreeBookingSlots('user', 'pass', past);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.name).toBe('Error');
+      if (!result.ok) expect(result.error.name).toBe('InvalidBookingDateError');
       expect(mockClient.fetchCalendarObjects).not.toHaveBeenCalled();
     });
 
@@ -155,7 +155,7 @@ describe('Calendar', () => {
       const result = await calendar.fetchFreeBookingSlots('user', 'pass', today);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.name).toBe('Error');
+      if (!result.ok) expect(result.error.name).toBe('InvalidBookingDateError');
     });
 
     it('returns ok:false for Saturday', async () => {
@@ -165,7 +165,7 @@ describe('Calendar', () => {
       const result = await calendar.fetchFreeBookingSlots('user', 'pass', saturday);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.name).toBe('Error');
+      if (!result.ok) expect(result.error.name).toBe('InvalidBookingDateError');
     });
 
     it('returns ok:false for Sunday', async () => {
@@ -175,7 +175,7 @@ describe('Calendar', () => {
       const result = await calendar.fetchFreeBookingSlots('user', 'pass', sunday);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.name).toBe('Error');
+      if (!result.ok) expect(result.error.name).toBe('InvalidBookingDateError');
     });
 
     it('accepts a valid future weekday and returns ok:true', async () => {
