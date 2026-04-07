@@ -22,17 +22,17 @@ export class Email {
     });
   }
 
-    public async sendBookingConfirmation(toEmail: string, clientName: string, time: Temporal.ZonedDateTime, teamsJoinUrl: string, iCalString?: string): Promise<Result<boolean, Error>> {
+    public async sendBookingConfirmation(toEmail: string, clientName: string, time: Temporal.ZonedDateTime, meetingUrl: URL, iCalString?: string): Promise<Result<boolean, Error>> {
         const start = Temporal.ZonedDateTime.from(time);
         const mailOptions: nodemailer.SendMailOptions = {
-            from: `"Merels Capital" <andrewbowden86@icloud.com>`,
+            from: `"${process.env.SEND_FROM_NAME}" <${process.env.SEND_FROM_EMAIL}>`,
             to: toEmail,
             subject: `Your Introductory Meeting – ${start.toPlainDate().toString()}`,
             html: `
                 <h2>Hi ${clientName},</h2>
                 <p>Your booking with Merels Capital is confirmed!</p>
                 <p><strong>Date:</strong> ${start.toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })}</p>
-                <p><strong>Join via Microsoft Teams:</strong> <a href="${teamsJoinUrl}">${teamsJoinUrl}</a></p>
+                <p><strong>Join via this meeting link:</strong> <a href="${meetingUrl}">${meetingUrl}</a></p>
                 <p>Looking forward to speaking with you!</p>
                 <p>— Merels Capital Team</p>
             `,

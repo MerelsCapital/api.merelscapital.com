@@ -76,7 +76,7 @@ app.get('/slots', async (req, res) => {
 
 app.post('/booking', async (req, res) => {
     const { values } = req.body;
-    const result = await calendar.createNewBooking(username, password, values[0], values[1], values[2], values[3]);
+    const result = await calendar.createNewBooking(username, password, values[0], values[1], values[2], values[3], values[4]);
     if (!result.ok) {
         Logger.error({
             err: new Error("An error occurred creating a booking."),

@@ -56,7 +56,38 @@ export class Meeting {
             return { ok: true, value: new URL(jitsiLink) };
         }
         else if(meetingType === MeetingType.Zoom){
-            return { ok: false, error: new Error("Zoom link generation is not yet implemented.") };
+            // Step 1: get an access token
+            try{
+                const tokenRes = await fetch('https://zoom.us/oauth/token?grant_type=account_credentials&account_id=' + process.env.ZOOM_ACCOUNT_ID, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Basic ' + Buffer.from(`${process.env.ZOOM_CLIENT_ID}:${process.env.ZOOM_CLIENT_SECRET}`).toString('base64'),
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    }
+                });
+                const { access_token } = await tokenRes.json();
+                // Step 2: create the meeting
+                const meetingRes = await fetch('https://api.zoom.us/v2/users/me/meetings', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${access_token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        topic: 'Introductory Meeting',
+                        type: 1, // instant meeting
+                    })
+                });
+                const meeting = await meetingRes.json();
+                return { ok: true, value: new URL(meeting.join_url) };
+            }
+            catch(error){
+                Logger.error({
+                    err: error,
+                    msg: 'Generating the zoom link has failed.',
+                });
+                return { ok: false, error: new Error("Generating the zoom link has failed.") };
+            }
         }
         else {
             Logger.error({
