@@ -226,21 +226,21 @@ export class Calendar {
             const start = Temporal.ZonedDateTime.from(time);
             const tz = start.timeZoneId;
             
-            let iCalString = "BEGIN:VCALENDAR\n";
-            iCalString += "VERSION:2.0\n";
+            let iCalString = "BEGIN:VCALENDAR\r\n";
+            iCalString += "VERSION:2.0\r\n";
             iCalString += 'PRODID:-//Merels Capital//Bookings v1.0//EN\r\n';
-            iCalString += "METHOD:PUBLISH\n";
-            iCalString += "BEGIN:VEVENT\n";
-            iCalString += `UID:${uid}\n`;
-            iCalString += `SUMMARY:${clientName} - Introductory Meeting\n`;
-            iCalString += `DTSTART;TZID=${start.timeZoneId}:${start.toPlainDateTime().toString().replace(/[-:]/g, '')}\n`;
-            iCalString += `DTEND;TZID=${start.timeZoneId}:${start.add({ minutes: 30 }).toPlainDateTime().toString().replace(/[-:]/g, '')}\n`;
-            iCalString += `DTSTAMP:${now.toPlainDate().toString().replace(/[-:]/g, '')}Z\n`;
-            iCalString += `LOCATION:${meetingLink}\n`;
-            iCalString += `DESCRIPTION:Introductory meeting with ${clientName} - ${details}\n`;
-            iCalString += "CLASS:PUBLIC\n";
-            iCalString += "END:VEVENT\n";
-            iCalString += "END:VCALENDAR\n";
+            iCalString += "METHOD:PUBLISH\r\n";
+            iCalString += "BEGIN:VEVENT\r\n";
+            iCalString += `UID:${uid}\r\n`;
+            iCalString += `SUMMARY:${clientName} - Introductory Meeting\r\n`;
+            iCalString += `DTSTART;TZID=${start.timeZoneId}:${start.toPlainDateTime().toString().replace(/[-:]/g, '')}\r\n`;
+            iCalString += `DTEND;TZID=${start.timeZoneId}:${start.add({ minutes: 30 }).toPlainDateTime().toString().replace(/[-:]/g, '')}\r\n`;
+            iCalString += `DTSTAMP:${now.toPlainDate().toString().replace(/[-:]/g, '')}Z\r\n`;
+            iCalString += `LOCATION:${meetingLink}\r\n`;
+            iCalString += `DESCRIPTION:Introductory meeting with ${clientName} - ${details}\r\n`;
+            iCalString += "CLASS:PUBLIC\r\n";
+            iCalString += "END:VEVENT\r\n";
+            iCalString += "END:VCALENDAR\r\n";
             return { ok: true, value: iCalString };
         }
         catch(error){
