@@ -2,11 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Email } from '../Email.js';
 import { Temporal } from '@js-temporal/polyfill';
 
-// ──────────────────────────────────────────────────────────────
-// MOCK EXTERNAL DEPENDENCIES
-// ──────────────────────────────────────────────────────────────
-// We mock nodemailer so tests never hit real SMTP servers (keeps tests fast,
-// deterministic, and portable across any hosting provider).
 vi.mock('nodemailer', () => ({
   default: {
     createTransport: vi.fn().mockReturnValue({
@@ -15,65 +10,97 @@ vi.mock('nodemailer', () => ({
   },
 }));
 
-// Mock dotenv so the constructor doesn't try to load real .env credentials
-// during tests (important for CI/CD and when moving between environments).
 vi.mock('dotenv', () => ({ config: vi.fn() }));
+
+vi.mock('../Logger.js', () => ({
+  Logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+}));
 
 describe('Email', () => {
   let emailService: Email;
+  const start = Temporal.ZonedDateTime.from('2026-04-06T09:00[America/Denver]');
+  const meetingUrl = new URL('https://meet.jit.si/testroom');
 
-  // ──────────────────────────────────────────────────────────────
-  // SETUP BEFORE EACH TEST
-  // ──────────────────────────────────────────────────────────────
   beforeEach(() => {
-    vi.clearAllMocks();           // Reset all mock call counts and implementations
-    emailService = new Email();   // Fresh Email instance for every test
+    vi.clearAllMocks();
+    emailService = new Email();
   });
 
-  // ──────────────────────────────────────────────────────────────
-  // TEST 1: Functioning path – successful booking confirmation email
-  // ──────────────────────────────────────────────────────────────
-  it('sends booking confirmation with correct HTML and .ics attachment', async () => {
-    const start = Temporal.ZonedDateTime.from('2026-04-02T10:00[America/Denver]');
-
+  it('returns ok:true on a successful send', async () => {
     const result = await emailService.sendBookingConfirmation(
       'client@example.com',
       'John Doe',
       start,
-      'https://teams.microsoft.com/l/meetup-join/...',
-      'BEGIN:VCALENDAR...' // fake iCal string
+      meetingUrl,
+      'BEGIN:VCALENDAR...'
     );
 
-    // Verify the public contract: method returns true on success
-    expect(result).toBe(true);
-
-    // Verify nodemailer was used correctly (transport was created)
-    const nodemailer = await import('nodemailer');
-    const createTransport = nodemailer.default.createTransport;
-    expect(createTransport).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(true);
   });
 
-  // ──────────────────────────────────────────────────────────────
-  // TEST 2: Error path – SMTP failure should return false gracefully
-  // ──────────────────────────────────────────────────────────────
-  it('returns false on send error', async () => {
-    // Force the mocked sendMail to reject (simulates real SMTP/network failure)
+  it('calls sendMail once per invocation', async () => {
+    await emailService.sendBookingConfirmation('client@example.com', 'John Doe', start, meetingUrl);
+
     const nodemailer = await import('nodemailer');
-    (nodemailer.default.createTransport().sendMail as any).mockRejectedValueOnce(
-      new Error('SMTP fail')
-    );
+    const sendMail = nodemailer.default.createTransport().sendMail;
+    expect(sendMail).toHaveBeenCalledTimes(1);
+  });
 
-    const start = Temporal.ZonedDateTime.from('2026-04-02T10:00[America/Denver]');
+  it('includes the client name in the sent email', async () => {
+    await emailService.sendBookingConfirmation('client@example.com', 'Jane Smith', start, meetingUrl);
 
-    const result = await emailService.sendBookingConfirmation(
-      'client@example.com',
-      'John',
-      start,
-      'url'
-    );
+    const nodemailer = await import('nodemailer');
+    const sendMail = nodemailer.default.createTransport().sendMail;
+    const mailOptions = (sendMail as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(mailOptions.html).toContain('Jane Smith');
+  });
 
-    // The method should catch the error internally and return false
-    // (never throw to the caller – important for robust booking flow)
-    expect(result).toBe(false);
+  it('sends to the correct recipient address', async () => {
+    await emailService.sendBookingConfirmation('recipient@test.com', 'John', start, meetingUrl);
+
+    const nodemailer = await import('nodemailer');
+    const sendMail = nodemailer.default.createTransport().sendMail;
+    const mailOptions = (sendMail as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(mailOptions.to).toBe('recipient@test.com');
+  });
+
+  it('attaches the .ics file when an iCal string is provided', async () => {
+    await emailService.sendBookingConfirmation('client@example.com', 'John', start, meetingUrl, 'BEGIN:VCALENDAR...');
+
+    const nodemailer = await import('nodemailer');
+    const sendMail = nodemailer.default.createTransport().sendMail;
+    const mailOptions = (sendMail as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(mailOptions.attachments).toBeDefined();
+    expect(mailOptions.attachments[0].contentType).toBe('text/calendar');
+  });
+
+  it('does not attach a file when no iCal string is provided', async () => {
+    await emailService.sendBookingConfirmation('client@example.com', 'John', start, meetingUrl);
+
+    const nodemailer = await import('nodemailer');
+    const sendMail = nodemailer.default.createTransport().sendMail;
+    const mailOptions = (sendMail as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(mailOptions.attachments).toBeUndefined();
+  });
+
+  it('returns ok:false when sendMail throws', async () => {
+    const nodemailer = await import('nodemailer');
+    (nodemailer.default.createTransport().sendMail as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('SMTP fail'));
+
+    const result = await emailService.sendBookingConfirmation('client@example.com', 'John', start, meetingUrl);
+
+    expect(result.ok).toBe(false);
+  });
+
+  it('does not throw when sendMail fails — error is contained in Result', async () => {
+    const nodemailer = await import('nodemailer');
+    (nodemailer.default.createTransport().sendMail as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('SMTP fail'));
+
+    await expect(
+      emailService.sendBookingConfirmation('client@example.com', 'John', start, meetingUrl)
+    ).resolves.toMatchObject({ ok: false });
   });
 });
