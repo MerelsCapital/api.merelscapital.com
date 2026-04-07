@@ -252,14 +252,14 @@ export class Calendar {
         }
     }
 
-    private async sendBookingConfirmation(clientEmail: string, clientName: string, start: Temporal.ZonedDateTime, details: string, teamsJoinUrl: URL, iCalString?: Result<string>): Promise<Result<boolean, Error>> {
+    private async sendBookingConfirmation(clientEmail: string, clientName: string, start: Temporal.ZonedDateTime, details: string, meetingLink: URL, iCalString?: Result<string>): Promise<Result<boolean, Error>> {
         const emailService = new Email();
         if(iCalString === null || iCalString === undefined || !iCalString.ok || iCalString.value === "")
-            iCalString = this.createICalString(clientName, start, details);
+            iCalString = this.createICalString(clientName, start, details, meetingLink.toString());
 
         try{
             if(iCalString !== undefined && iCalString.ok){
-                await emailService.sendBookingConfirmation(clientEmail, clientName, start, teamsJoinUrl, iCalString.value);
+                await emailService.sendBookingConfirmation(clientEmail, clientName, start, meetingLink, iCalString.value);
             }
         }
         catch(error){
