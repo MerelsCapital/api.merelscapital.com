@@ -88,11 +88,11 @@ describe('Meeting', () => {
     });
 
     describe('Zoom', () => {
-      beforeEach(() => {
-        process.env.ZOOM_ACCOUNT_ID = 'test-account';
-        process.env.ZOOM_CLIENT_ID = 'test-client';
-        process.env.ZOOM_CLIENT_SECRET = 'test-secret';
-      });
+      const zoomConfig = {
+        accountId: 'test-account',
+        clientId: 'test-client',
+        clientSecret: 'test-secret',
+      };
 
       it('returns ok:true with the join_url from Zoom API', async () => {
         mockFetch
@@ -103,7 +103,7 @@ describe('Meeting', () => {
             json: async () => ({ join_url: 'https://zoom.us/j/123456' }),
           });
 
-        const result = await Meeting.generateMeetingLink(MeetingType.Zoom);
+        const result = await Meeting.generateMeetingLink(MeetingType.Zoom, zoomConfig);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -117,7 +117,7 @@ describe('Meeting', () => {
           .mockResolvedValueOnce({ json: async () => ({ access_token: 'mock-token' }) })
           .mockResolvedValueOnce({ json: async () => ({ join_url: 'https://zoom.us/j/123' }) });
 
-        await Meeting.generateMeetingLink(MeetingType.Zoom);
+        await Meeting.generateMeetingLink(MeetingType.Zoom, zoomConfig);
 
         expect(mockFetch).toHaveBeenCalledTimes(2);
         expect(mockFetch.mock.calls[0][0]).toContain('zoom.us/oauth/token');
@@ -129,16 +129,22 @@ describe('Meeting', () => {
           .mockResolvedValueOnce({ json: async () => ({ access_token: 'my-token' }) })
           .mockResolvedValueOnce({ json: async () => ({ join_url: 'https://zoom.us/j/123' }) });
 
-        await Meeting.generateMeetingLink(MeetingType.Zoom);
+        await Meeting.generateMeetingLink(MeetingType.Zoom, zoomConfig);
 
         const meetingCallHeaders = mockFetch.mock.calls[1][1].headers;
         expect(meetingCallHeaders['Authorization']).toBe('Bearer my-token');
       });
 
+      it('returns ok:false when zoomConfig is not provided', async () => {
+        const result = await Meeting.generateMeetingLink(MeetingType.Zoom);
+
+        expect(result.ok).toBe(false);
+      });
+
       it('returns ok:false when the Zoom API fetch throws', async () => {
         mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
-        const result = await Meeting.generateMeetingLink(MeetingType.Zoom);
+        const result = await Meeting.generateMeetingLink(MeetingType.Zoom, zoomConfig);
 
         expect(result.ok).toBe(false);
       });

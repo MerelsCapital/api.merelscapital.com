@@ -1,91 +1,129 @@
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { Calendar } from './Calendar.js';
 import { Temporal } from '@js-temporal/polyfill';
-import type { Result } from './Result.js';
-import type { DAVCalendar } from 'tsdav';
 import { Logger } from './Logger.js';
+import { MeetingType } from './Meeting.js';
 
-const app = express();
-app.use(cors({ origin: 'http://bookings.merelscapital.com:5173' }));
-app.use(express.json());
-
-const username = process.env.APPLE_ID!;
-const password = process.env.APPLE_APP_SPECIFIC_PASSWORD!;
-
-let gotCalendar = false;
-let calendarResult: Result<DAVCalendar[], Error> = { ok: false, error: new Error('Not yet fetched') };
-let bookingCalData: DAVCalendar | undefined = undefined;
-let calendar: Calendar | undefined = undefined;
-
-// Keep retrying to setup the calendar until it succeeds, with a delay between attempts.
-while (!gotCalendar) {
-    calendarResult = await Calendar.fetchCalendars(username, password);
-    if (calendarResult.ok) {
-        gotCalendar = true;
-        bookingCalData = calendarResult.value.find(c => c.displayName === 'Bookings');  
-        if (bookingCalData === undefined || bookingCalData === null) {
-            console.error('Bookings calendar not found. Retrying in 1 second...');
-            gotCalendar = false;
-        }
-        if(bookingCalData) {
-            calendar = new Calendar(bookingCalData);
-            if (calendar === undefined || calendar === null) {
-                console.error('Bookings calendar data is undefined. Retrying in 1 second...');
-                gotCalendar = false;
-            }
-        }
-    }   
-    else{
-        Logger.error({
-            err: calendarResult.error,
-            msg: 'Failed to fetch calendar.',
-        });
-        console.log("Failed to fetch calendar: " + calendarResult.error);
-    }
-        
-    if(!gotCalendar)
-        await new Promise(resolve => setTimeout(resolve, 1000));
+export interface Env {
+    APPLE_ID: string;
+    APPLE_APP_SPECIFIC_PASSWORD: string;
+    RESEND_API_KEY: string;
+    RESEND_FROM_NAME: string;
+    RESEND_FROM_EMAIL: string;
+    ZOOM_ACCOUNT_ID: string;
+    ZOOM_CLIENT_ID: string;
+    ZOOM_CLIENT_SECRET: string;
 }
 
-app.get('/slots', async (req, res) => {
-    try{
-        const date = Temporal.ZonedDateTime.from(`${req.query.date}T00:00:00[America/Denver]`);
-        const result = await calendar.fetchFreeBookingSlots(username, password, date);
-        if(result.ok){
-            return res.json({ slots: result.value.map(s => s.toString()) });
-        }
-        else {
-            Logger.error({
-                err: new Error("Response status: " + res.status),
-                msg: '.',
-            });
-            console.error(result.error);
-        }
-    }
-    catch(error){
-        Logger.error({
-            err: new Error("An error occurred fetching booking slots or parsing booking date."),
-            msg: 'An error occurred fetching booking slots or parsing booking date.',
-        });
-        console.error("An error occurred fetching booking slots or parsing booking date.: " + error);
-        return res.status(400).json({ error: 'Invalid Date.' });
-    }
-});
+const app = new Hono<{ Bindings: Env }>();
 
-app.post('/booking', async (req, res) => {
-    const { values } = req.body;
-    const result = await calendar.createNewBooking(username, password, values[0], values[1], values[2], values[3], values[4]);
+app.use('*', cors({
+    origin: ['https://bookings.merelscapital.com', 'http://localhost:5173', 'http://bookings.merelscapital.com:5173'],
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Content-Type'],
+}));
+
+async function getCalendar(env: Env): Promise<Calendar | null> {
+    const result = await Calendar.fetchCalendars(env.APPLE_ID, env.APPLE_APP_SPECIFIC_PASSWORD);
     if (!result.ok) {
-        Logger.error({
-            err: new Error("An error occurred creating a booking."),
-            msg: 'An error occurred creating a booking.',
-        });
-        res.status(500).json({ error: 'Failed to create booking' });
-        return;
+        Logger.error({ err: result.error, msg: 'Failed to fetch calendars.' });
+        return null;
     }
-    res.json({ success: true });
+    const calData = result.value.find(c => c.displayName === 'Bookings');
+    if (!calData) {
+        Logger.error({ err: new Error('Bookings calendar not found'), msg: 'Bookings calendar not found.' });
+        return null;
+    }
+    return new Calendar(calData);
+}
+
+app.get('/slots', async (c) => {
+    const dateParam = c.req.query('date');
+    if (!dateParam) {
+        return c.json({ error: 'date query param is required' }, 400);
+    }
+
+    let date: Temporal.ZonedDateTime;
+    try {
+        date = Temporal.ZonedDateTime.from(`${dateParam}T00:00:00[America/Denver]`);
+    } catch {
+        return c.json({ error: 'Invalid date.' }, 400);
+    }
+
+    const calendar = await getCalendar(c.env);
+    if (!calendar) {
+        return c.json({ error: 'Calendar unavailable.' }, 503);
+    }
+
+    const result = await calendar.fetchFreeBookingSlots(c.env.APPLE_ID, c.env.APPLE_APP_SPECIFIC_PASSWORD, date);
+    if (!result.ok) {
+        Logger.error({ err: result.error, msg: 'Failed to fetch slots.' });
+        return c.json({ error: 'Failed to fetch slots.' }, 500);
+    }
+
+    return c.json({ slots: result.value.map(s => s.toString()) });
 });
 
-app.listen(3000, () => console.log('API running on http://localhost:3000'));
+app.post('/booking', async (c) => {
+    let body: { values: string[] };
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json({ error: 'Invalid JSON body.' }, 400);
+    }
+
+    const { values } = body;
+    if (!Array.isArray(values) || values.length < 5) {
+        return c.json({ error: 'Invalid booking values.' }, 400);
+    }
+
+    let bookingTime: Temporal.ZonedDateTime;
+    try {
+        bookingTime = Temporal.ZonedDateTime.from(values[2]);
+    } catch {
+        return c.json({ error: 'Invalid booking time.' }, 400);
+    }
+
+    const meetingType = values[4] as MeetingType;
+    if (!Object.values(MeetingType).includes(meetingType)) {
+        return c.json({ error: 'Invalid meeting type.' }, 400);
+    }
+
+    const calendar = await getCalendar(c.env);
+    if (!calendar) {
+        return c.json({ error: 'Calendar unavailable.' }, 503);
+    }
+
+    const emailConfig = {
+        apiKey: c.env.RESEND_API_KEY,
+        fromName: c.env.RESEND_FROM_NAME,
+        fromEmail: c.env.RESEND_FROM_EMAIL,
+    };
+    const zoomConfig = {
+        accountId: c.env.ZOOM_ACCOUNT_ID,
+        clientId: c.env.ZOOM_CLIENT_ID,
+        clientSecret: c.env.ZOOM_CLIENT_SECRET,
+    };
+
+    const result = await calendar.createNewBooking(
+        c.env.APPLE_ID,
+        c.env.APPLE_APP_SPECIFIC_PASSWORD,
+        values[0],
+        values[1],
+        bookingTime,
+        values[3],
+        meetingType,
+        emailConfig,
+        zoomConfig,
+    );
+
+    if (!result.ok) {
+        Logger.error({ err: result.error, msg: 'Failed to create booking.' });
+        return c.json({ error: 'Failed to create booking.' }, 500);
+    }
+
+    return c.json({ success: true });
+});
+
+export default app;

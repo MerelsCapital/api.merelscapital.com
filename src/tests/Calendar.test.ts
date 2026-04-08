@@ -328,22 +328,23 @@ describe('Calendar', () => {
   // ---------------------------------------------------------------------------
   describe('createNewBooking', () => {
     const bookingStart = Temporal.ZonedDateTime.from('2026-04-06T09:00:00[America/Denver]');
+    const mockEmailConfig = { apiKey: 'test-key', fromName: 'Test', fromEmail: 'test@test.com' };
 
     it('returns ok:true on a successful Jitsi booking', async () => {
-      const result = await calendar.createNewBooking('user', 'pass', 'Jane Doe', 'jane@example.com', bookingStart, 'test details', MeetingType.Jitsi);
+      const result = await calendar.createNewBooking('user', 'pass', 'Jane Doe', 'jane@example.com', bookingStart, 'test details', MeetingType.Jitsi, mockEmailConfig);
 
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value).toBe(true);
     });
 
     it('returns ok:true on a successful Phone booking', async () => {
-      const result = await calendar.createNewBooking('user', 'pass', 'Jane Doe', '+14250000000', bookingStart, 'test details', MeetingType.Phone);
+      const result = await calendar.createNewBooking('user', 'pass', 'Jane Doe', '+14250000000', bookingStart, 'test details', MeetingType.Phone, mockEmailConfig);
 
       expect(result.ok).toBe(true);
     });
 
     it('calls createCalendarObject with correct calendar and filename', async () => {
-      await calendar.createNewBooking('user', 'pass', 'Jane Doe', 'jane@example.com', bookingStart, 'details', MeetingType.Jitsi);
+      await calendar.createNewBooking('user', 'pass', 'Jane Doe', 'jane@example.com', bookingStart, 'details', MeetingType.Jitsi, mockEmailConfig);
 
       expect(mockClient.createCalendarObject).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -357,7 +358,7 @@ describe('Calendar', () => {
     it('returns ok:false when the DAV client constructor throws', async () => {
       (createDAVClient as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('DAV error'));
 
-      const result = await calendar.createNewBooking('user', 'pass', 'Jane Doe', 'jane@example.com', bookingStart, 'details', MeetingType.Jitsi);
+      const result = await calendar.createNewBooking('user', 'pass', 'Jane Doe', 'jane@example.com', bookingStart, 'details', MeetingType.Jitsi, mockEmailConfig);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -374,7 +375,7 @@ describe('Calendar', () => {
         mockClient.createCalendarObject.mockImplementation(
           async ({ iCalString }: { iCalString: string }) => { capturedICal = iCalString; }
         );
-        await calendar.createNewBooking('user', 'pass', 'Jane Doe', 'jane@example.com', bookingStart, 'test details', MeetingType.Jitsi);
+        await calendar.createNewBooking('user', 'pass', 'Jane Doe', 'jane@example.com', bookingStart, 'test details', MeetingType.Jitsi, mockEmailConfig);
       });
 
       it('contains correct SUMMARY', () => {

@@ -1,8 +1,19 @@
-import pino from 'pino';
+type LogPayload = {
+    msg: string;
+    err?: unknown;
+    [key: string]: unknown;
+};
 
-export const Logger = pino({
-    level: process.env.LOG_LEVEL ?? 'info',
-    transport: process.env.NODE_ENV === 'production'
-        ? { target: 'pino/file', options: { destination: '/var/log/api.merelscapital/app.log' } }
-        : { target: 'pino-pretty' }, // human-readable in dev
-});
+function formatEntry(level: string, payload: LogPayload): string {
+    const { msg, err, ...rest } = payload;
+    const errStr = err instanceof Error
+        ? { message: err.message, stack: err.stack }
+        : err;
+    return JSON.stringify({ level, msg, ...rest, ...(err !== undefined ? { err: errStr } : {}) });
+}
+
+export const Logger = {
+    info:  (payload: LogPayload) => console.log(formatEntry('info', payload)),
+    warn:  (payload: LogPayload) => console.warn(formatEntry('warn', payload)),
+    error: (payload: LogPayload) => console.error(formatEntry('error', payload)),
+};

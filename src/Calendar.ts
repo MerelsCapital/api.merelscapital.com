@@ -1,5 +1,5 @@
 import { createDAVClient } from 'tsdav';
-import type { DAVCalendar, DAVCalendarObject } from 'tsdav';
+import type { DAVCalendar } from 'tsdav';
 import { Temporal } from '@js-temporal/polyfill';
 import { CalendarEvent } from './CalendarEvent.js';
 import { Email } from './Email.js';
@@ -8,10 +8,13 @@ import { CalendarError, InvalidBookingDateError } from './CalendarError.js';
 import type { Result } from './Result.js';
 import { Meeting, MeetingType } from './Meeting.js';
 
+type EmailConfig = { apiKey: string; fromName: string; fromEmail: string };
+type ZoomConfig = { accountId: string; clientId: string; clientSecret: string };
+
 export class Calendar {
     DCal: DAVCalendar
-    
-    constructor(dcal: DAVCalendar) { 
+
+    constructor(dcal: DAVCalendar) {
         this.DCal = dcal;
     }
 
@@ -87,7 +90,6 @@ export class Calendar {
         calendarEvents.forEach(calendarEvent => {
             slots.forEach((slotStart, i) => {
                 const nextSlot = i + 1 < slots.length ? slots[i + 1] : slotEnd;
-                // Standard interval overlap: event overlaps slot if event.start < slotEnd AND event.end > slotStart
                 if (Temporal.ZonedDateTime.compare(calendarEvent.start, nextSlot) < 0 &&
                     Temporal.ZonedDateTime.compare(calendarEvent.end, slotStart) > 0)
                     free[i] = false;
@@ -98,7 +100,17 @@ export class Calendar {
         return { ok: true, value: freeSlots };
     }
 
-    public async createNewBooking(username: string, password: string, clientName: string, clientEmail: string, time: Temporal.ZonedDateTime, details: string, meetingType: MeetingType): Promise<Result<boolean, Error>> {
+    public async createNewBooking(
+        username: string,
+        password: string,
+        clientName: string,
+        clientEmail: string,
+        time: Temporal.ZonedDateTime,
+        details: string,
+        meetingType: MeetingType,
+        emailConfig: EmailConfig,
+        zoomConfig?: ZoomConfig
+    ): Promise<Result<boolean, Error>> {
         try{
             const client = await createDAVClient({
                 serverUrl: 'https://caldav.icloud.com',
@@ -110,60 +122,58 @@ export class Calendar {
                 defaultAccountType: 'caldav',
             });
 
-            if(meetingType !== MeetingType.Phone){
-                const meetingLink = await Meeting.generateMeetingLink(meetingType);
-                if((meetingLink).ok){
+            if (meetingType !== MeetingType.Phone) {
+                const meetingLink = await Meeting.generateMeetingLink(meetingType, zoomConfig);
+                if (meetingLink.ok) {
                     const iCalString = this.createICalString(clientName, time, details, meetingLink.value.toString());
-                    if(iCalString.ok){
-                        try{
+                    if (iCalString.ok) {
+                        try {
                             await client.createCalendarObject({
                                 calendar: this.DCal,
                                 filename: 'Introduction.ics',
                                 iCalString: iCalString.value,
                             });
                         }
-                        catch(error){
+                        catch (error) {
                             Logger.error({
                                 err: error,
-                                msg: 'An error occoured createing a calendar object.',
+                                msg: 'An error occurred creating a calendar object.',
                             });
                         }
                     }
-                    this.sendBookingConfirmation(clientEmail, clientName, time, details, meetingLink.value, iCalString);
+                    await this.sendBookingConfirmation(clientEmail, clientName, time, details, meetingLink.value, emailConfig, iCalString);
                 }
-                else{
+                else {
                     Logger.error({
                         err: meetingLink.error,
                         msg: 'An error occurred creating the meeting URL.',
                     });
                     return { ok: false, error: meetingLink.error };
                 }
-                
             }
             else {
                 const iCalString = this.createICalString(clientName, time, details, clientEmail);
-                if(iCalString.ok){
-                    try{
+                if (iCalString.ok) {
+                    try {
                         await client.createCalendarObject({
                             calendar: this.DCal,
                             filename: 'Introduction.ics',
                             iCalString: iCalString.value,
                         });
                     }
-                    catch(error){
+                    catch (error) {
                         Logger.error({
                             err: error,
-                            msg: 'An error occoured createing a calendar object.',
+                            msg: 'An error occurred creating a calendar object.',
                         });
                     }
                 }
-                //add some code to send a text here.
             }
         }
-        catch(error){
+        catch (error) {
             Logger.error({
                 err: error,
-                msg: 'An error occoured createing a calendar object.',
+                msg: 'An error occurred creating a calendar object.',
             });
             return { ok: false, error: new CalendarError('Failed to create calendar object', 'CREATE_CALENDAR_OBJECT_ERROR', { cause: error }) };
         }
@@ -172,7 +182,7 @@ export class Calendar {
 
     private async fetchCalendarObjects(username: string, password: string, date: Temporal.ZonedDateTime): Promise<Result<CalendarEvent[], Error>> {
         try{
-            let events: CalendarEvent[] = [];
+            const events: CalendarEvent[] = [];
 
             const client = await createDAVClient({
                 serverUrl: 'https://caldav.icloud.com',
@@ -184,26 +194,26 @@ export class Calendar {
                 defaultAccountType: 'caldav',
             });
 
-            let DCalObjects = await client.fetchCalendarObjects({
-                calendar: this.DCal, 
-                timeRange: { 
-                    start: date.toPlainDate().toString(), 
+            const DCalObjects = await client.fetchCalendarObjects({
+                calendar: this.DCal,
+                timeRange: {
+                    start: date.toPlainDate().toString(),
                     end:   date.add({ days: 1 }).toPlainDate().toString()
                 }
             });
 
-            DCalObjects.forEach((obj, index) => {
-                let data: string[] = obj.data.toString().split(/\r?\n/);
+            DCalObjects.forEach((obj) => {
+                const data: string[] = obj.data.toString().split(/\r?\n/);
                 let name = '';
                 let start = '';
                 let end = '';
-                
+
                 data.forEach((line) => {
-                    if(line.startsWith('SUMMARY:'))
+                    if (line.startsWith('SUMMARY:'))
                         name = line.replace('SUMMARY:','');
-                    else if(line.startsWith('DTSTART;'))
+                    else if (line.startsWith('DTSTART;'))
                         start = line.replace('DTSTART;','');
-                    else if(line.startsWith('DTEND;'))
+                    else if (line.startsWith('DTEND;'))
                         end = line.replace('DTEND;','');
                 });
 
@@ -224,8 +234,7 @@ export class Calendar {
             const uid = `booking-${time.toString()}-${Math.random().toString(36).slice(2)}@merelscapital.com`;
             const now = Temporal.Now.zonedDateTimeISO('UTC');
             const start = Temporal.ZonedDateTime.from(time);
-            const tz = start.timeZoneId;
-            
+
             let iCalString = "BEGIN:VCALENDAR\r\n";
             iCalString += "VERSION:2.0\r\n";
             iCalString += 'PRODID:-//Merels Capital//Bookings v1.0//EN\r\n';
@@ -243,7 +252,7 @@ export class Calendar {
             iCalString += "END:VCALENDAR\r\n";
             return { ok: true, value: iCalString };
         }
-        catch(error){
+        catch (error) {
             Logger.error({
                 err: error,
                 msg: 'An error occurred creating the iCal string.',
@@ -252,17 +261,25 @@ export class Calendar {
         }
     }
 
-    private async sendBookingConfirmation(clientEmail: string, clientName: string, start: Temporal.ZonedDateTime, details: string, meetingLink: URL, iCalString?: Result<string>): Promise<Result<boolean, Error>> {
-        const emailService = new Email();
-        if(iCalString === null || iCalString === undefined || !iCalString.ok || iCalString.value === "")
+    private async sendBookingConfirmation(
+        clientEmail: string,
+        clientName: string,
+        start: Temporal.ZonedDateTime,
+        details: string,
+        meetingLink: URL,
+        emailConfig: EmailConfig,
+        iCalString?: Result<string>
+    ): Promise<Result<boolean, Error>> {
+        const emailService = new Email(emailConfig.apiKey, emailConfig.fromName, emailConfig.fromEmail);
+        if (iCalString === null || iCalString === undefined || !iCalString.ok || iCalString.value === "")
             iCalString = this.createICalString(clientName, start, details, meetingLink.toString());
 
-        try{
-            if(iCalString !== undefined && iCalString.ok){
+        try {
+            if (iCalString !== undefined && iCalString.ok) {
                 await emailService.sendBookingConfirmation(clientEmail, clientName, start, meetingLink, iCalString.value);
             }
         }
-        catch(error){
+        catch (error) {
             Logger.error({
                 err: error,
                 msg: 'An error occurred sending the confirmation email.',

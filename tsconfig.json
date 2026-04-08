@@ -1,15 +1,12 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "module": "NodeNext",
-    "moduleResolution": "nodenext",
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"],
     "verbatimModuleSyntax": true,
+    "types": ["@cloudflare/workers-types"]
   },
   "include": ["src"]
 }
