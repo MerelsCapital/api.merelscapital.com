@@ -24,7 +24,13 @@ app.use('*', cors({
     allowHeaders: ['Content-Type'],
 }));
 
+// Module-level cache — persists for the lifetime of the Worker instance,
+// eliminating the fetchCalendars() iCloud round-trip on every request.
+let cachedCalendar: Calendar | null = null;
+
 async function getCalendar(env: Env): Promise<Calendar | null> {
+    if (cachedCalendar) return cachedCalendar;
+
     const result = await Calendar.fetchCalendars(env.APPLE_ID, env.APPLE_APP_SPECIFIC_PASSWORD);
     if (!result.ok) {
         Logger.error({ err: result.error, msg: 'Failed to fetch calendars.' });
@@ -35,7 +41,8 @@ async function getCalendar(env: Env): Promise<Calendar | null> {
         Logger.error({ err: new Error('Bookings calendar not found'), msg: 'Bookings calendar not found.' });
         return null;
     }
-    return new Calendar(calData);
+    cachedCalendar = new Calendar(calData);
+    return cachedCalendar;
 }
 
 app.get('/slots', async (c) => {
@@ -62,6 +69,7 @@ app.get('/slots', async (c) => {
         return c.json({ error: 'Failed to fetch slots.' }, 500);
     }
 
+    c.header('Cache-Control', 'public, max-age=300'); // cached at Cloudflare edge for 5 minutes
     return c.json({ slots: result.value.map(s => s.toString()) });
 });
 
