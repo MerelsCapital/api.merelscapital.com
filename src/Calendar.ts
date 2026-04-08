@@ -42,14 +42,23 @@ export class Calendar {
     }
 
     public async fetchFreeBookingSlots(username: string, password: string, date: Temporal.ZonedDateTime): Promise<Result<Temporal.ZonedDateTime[], Error>> {
-        const tomorrow = Temporal.Now.zonedDateTimeISO('America/Denver').add({ days: 1 });
-        if (Temporal.ZonedDateTime.compare(date, tomorrow) < 0 || date.dayOfWeek === 6 || date.dayOfWeek === 7){
+        const startOfTomorrow = Temporal.Now.zonedDateTimeISO('America/Denver')
+        .with({ hour: 0, minute: 0, second: 0, millisecond: 0 })
+        .add({ days: 1 });
+
+        if (Temporal.ZonedDateTime.compare(date, startOfTomorrow) < 0 
+            || date.dayOfWeek === 6 
+            || date.dayOfWeek === 7) {
+            
             Logger.error({
                 err: new Error('Booking date must be at least 24 hours in the future and cannot be on a weekend.'),
                 msg: 'Invalid time provided.',
-            });
-            return { ok: false, error: new InvalidBookingDateError('Booking date must be at least 24 hours in the future and cannot be on a weekend.') };
-        }
+        });
+        return { 
+            ok: false, 
+            error: new InvalidBookingDateError('Booking date must be at least 24 hours in the future and cannot be on a weekend.') 
+        };
+    }
 
         const calendarResult = await this.fetchCalendarObjects(username, password, date);
         if (!calendarResult.ok) {
