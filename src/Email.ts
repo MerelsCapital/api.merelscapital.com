@@ -12,13 +12,7 @@ export class Email {
         this.fromAddress = `${fromName} <${fromEmail}>`;
     }
 
-    public async sendBookingConfirmation(
-        toEmail: string,
-        clientName: string,
-        time: Temporal.ZonedDateTime,
-        meetingUrl: URL,
-        iCalString?: string
-    ): Promise<Result<boolean, Error>> {
+    public async sendBookingConfirmation(toEmail: string, clientName: string, time: Temporal.ZonedDateTime, meetingUrl: URL, details: string, iCalString?: string): Promise<Result<boolean, Error>> {
         const start = Temporal.ZonedDateTime.from(time);
 
         try {
@@ -46,6 +40,26 @@ export class Email {
             Logger.error({
                 err: error,
                 msg: 'Error sending confirmation email.',
+            });
+            return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
+        }
+        try {
+            await this.resend.emails.send({
+                from: this.fromAddress,
+                to: "andrew.bowden@merelscapital.com",
+                subject: `New Introductory Meeting Booking – ${start.toPlainDate().toString()}`,
+                html: `
+                    <h2>New booking with ${clientName},</h2>
+                    <p><strong>Date:</strong> ${start.toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })}</p>
+                    <p><strong>Join via this meeting link:</strong> <a href="${meetingUrl}">${meetingUrl}</a></p>
+                    <p><strong>Topics:</strong> ${details}</p>
+                    <p>— Merels Capital Team</p>`,
+            });
+        }
+        catch (error) {
+            Logger.error({
+                err: error,
+                msg: 'Error sending internal confirmation email.',
             });
             return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
         }
