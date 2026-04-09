@@ -274,8 +274,8 @@ export class Calendar {
 
         try {
             if (iCalString !== undefined && iCalString.ok) {
-                await emailService.sendBookingConfirmation(clientEmail, clientName, start, meetingLink, iCalString.value);
-                await emailService.sendBookingConfirmation("andrew.bowden@merelscapital.com", clientName, start, meetingLink, iCalString.value);
+                await emailService.sendBookingConfirmation(clientEmail, clientName, start, meetingLink, iCalString.value, );
+                await emailService.sendInternalBookingConfirmation(clientEmail, clientName, start, meetingLink, details, iCalString.value);
             }
         }
         catch (error) {
