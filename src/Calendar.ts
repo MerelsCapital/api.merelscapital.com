@@ -42,12 +42,10 @@ export class Calendar {
     }
 
     public async fetchFreeBookingSlots(username: string, password: string, date: Temporal.ZonedDateTime): Promise<Result<Temporal.ZonedDateTime[], Error>> {
-        const startOfTomorrow = Temporal.Now.zonedDateTimeISO('America/Denver')
-        .with({ hour: 0, minute: 0, second: 0, millisecond: 0 })
-        .add({ days: 1 });
+        const tomorrowDate = Temporal.Now.plainDateISO('America/Denver').add({ days: 1 });
 
-        if (Temporal.ZonedDateTime.compare(date, startOfTomorrow) < 0 
-            || date.dayOfWeek === 6 
+        if (Temporal.PlainDate.compare(date.toPlainDate(), tomorrowDate) < 0
+            || date.dayOfWeek === 6
             || date.dayOfWeek === 7) {
             
             Logger.error({
@@ -109,17 +107,8 @@ export class Calendar {
         return { ok: true, value: freeSlots };
     }
 
-    public async createNewBooking(
-        username: string,
-        password: string,
-        clientName: string,
-        clientEmail: string,
-        time: Temporal.ZonedDateTime,
-        details: string,
-        meetingType: MeetingType,
-        emailConfig: EmailConfig,
-        zoomConfig?: ZoomConfig
-    ): Promise<Result<boolean, Error>> {
+    public async createNewBooking(username: string, password: string, clientName: string, clientEmail: string, time: Temporal.ZonedDateTime, details: string, meetingType: MeetingType,
+        emailConfig: EmailConfig, zoomConfig?: ZoomConfig): Promise<Result<boolean, Error>> {
         try{
             const client = await createDAVClient({
                 serverUrl: 'https://caldav.icloud.com',
@@ -139,7 +128,7 @@ export class Calendar {
                         try {
                             await client.createCalendarObject({
                                 calendar: this.DCal,
-                                filename: 'Introduction.ics',
+                                filename: `booking-${crypto.randomUUID()}.ics`,
                                 iCalString: iCalString.value,
                             });
                         }
@@ -166,7 +155,7 @@ export class Calendar {
                     try {
                         await client.createCalendarObject({
                             calendar: this.DCal,
-                            filename: 'Introduction.ics',
+                            filename: `booking-${crypto.randomUUID()}.ics`,
                             iCalString: iCalString.value,
                         });
                     }

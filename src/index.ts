@@ -19,10 +19,39 @@ export interface Env {
 const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', cors({
-    origin: ['https://bookings.merelscapital.com', 'http://localhost:5173', 'http://bookings.merelscapital.com:5173'],
+    origin: ['https://bookings.merelscapital.com', 'https://www.merelscapital.com', 'https://merelscapital.com'],
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['Content-Type'],
 }));
+
+/*const ALLOWED_ORIGINS = new Set([
+    'https://bookings.merelscapital.com',
+    'https://www.merelscapital.com',
+    'https://merelscapital.com',
+]);
+
+// Some browsers send Origin: null when fetch is made from within a sandboxed/cross-origin iframe.
+// Hono's built-in cors() rejects null, so we handle CORS manually to allow it.
+app.use('*', async (c, next) => {
+    const origin = c.req.header('Origin') ?? '';
+    const acao = ALLOWED_ORIGINS.has(origin) ? origin : 'https://bookings.merelscapital.com';
+
+    if (c.req.method === 'OPTIONS') {
+        return new Response(null, {
+            status: 204,
+            headers: {
+                'Access-Control-Allow-Origin': acao,
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Vary': 'Origin',
+            },
+        });
+    }
+
+    await next();
+    c.header('Access-Control-Allow-Origin', acao);
+    c.header('Vary', 'Origin');
+});*/
 
 // Module-level cache — persists for the lifetime of the Worker instance,
 // eliminating the fetchCalendars() iCloud round-trip on every request.
@@ -69,7 +98,7 @@ app.get('/slots', async (c) => {
         return c.json({ error: 'Failed to fetch slots.' }, 500);
     }
 
-    c.header('Cache-Control', 'public, max-age=300'); // cached at Cloudflare edge for 5 minutes
+    c.header('Cache-Control', 'public, max-age=300');
     return c.json({ slots: result.value.map(s => s.toString()) });
 });
 
